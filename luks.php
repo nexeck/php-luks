@@ -117,6 +117,30 @@ class Luks {
 	/**
 	 * @static
 	 *
+	 * @param $device
+	 *
+	 * @return bool
+	 */
+	public static function is_md($device)
+	{
+		return preg_match('/^\/dev\/md\w+\d+$/i', $device) ? true : false;
+	}
+
+	/**
+	 * @static
+	 *
+	 * @param $device
+	 *
+	 * @return bool
+	 */
+	public static function is_lvm($device)
+	{
+		return preg_match('/^\/dev\/dm\w+\d+$/i', $device) ? true : false;
+	}
+
+	/**
+	 * @static
+	 *
 	 * @param $partition
 	 *
 	 * @return bool
@@ -184,9 +208,23 @@ class Luks {
 		{
 			throw new Exception('No device given');
 		}
-		$commands   = array();
-		$commands[] = sprintf('export LANG=C; sudo parted --script --align optimal -- %1$s mklabel gpt mkpart primary 2048s 100%', $device);
-		$commands[] = sprintf('export LANG=C; sudo partprobe %1$s', $device);
+		$commands = array();
+		//$commands[] = sprintf("sudo omv-initfs -b -t xfs %s >/dev/null 2>&1 &", escapeshellarg($device));
+		if (self::is_md($device))
+		{
+			$commands[] = sprintf('export LANG=C; sudo wipefs -a %1$s', $device);
+		}
+		elseif (self::is_lvm($device))
+		{
+			$commands[] = sprintf('export LANG=C; sudo wipefs -a %1$s', $device);
+		}
+		else
+		{
+			$commands[] = sprintf('export LANG=C; sudo dd if=/dev/zero of=%1$s bs=512 count=4', $device);
+			$commands[] = sprintf('export LANG=C; sudo dd if=/dev/zero of=%1$s bs=512 count=2 seek=$(expr $(sudo blockdev --getsize64 %1$s) / 512 - 2)', $device);
+			$commands[] = sprintf('export LANG=C; sudo parted --script --align optimal -- %1$s mklabel gpt mkpart primary 2048s 100%', $device);
+			$commands[] = sprintf('export LANG=C; sudo partprobe %1$s', $device);
+		}
 
 		foreach ($commands as $command)
 		{
@@ -452,7 +490,7 @@ class Luks {
 	{
 		if ($this->_is_luks($this->_partition))
 		{
-			throw new Exception('Cannot format existing luks partition');
+			throw new Exception('Wont format existing luks partition');
 		}
 
 		$this->_uuid = self::uuid();
