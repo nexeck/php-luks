@@ -4,7 +4,7 @@
  * @license		http://www.gnu.org/licenses/gpl.html GPL Version 3
  * @author		 Marcel Beck <marcel.beck@mbeck.org>
  * @copyright	Copyright (c) 2012 Marcel beck
- * @homepage https://github.com/nexeck/php-luks
+ * @homepage	 https://github.com/nexeck/php-luks
  *
  * This file is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -124,22 +124,17 @@ class Luks {
 	 */
 	public static function is_luks($partition)
 	{
-		if (self::is_device($partition) === false)
+		if (self::is_partition($partition) === false)
 		{
 			throw new Exception('No device');
 		}
-		$cmd = sprintf("export LANG=C; sudo cryptsetup luksDump %s", $partition);
+		$cmd = sprintf('export LANG=C; sudo cryptsetup luksDump %s', $partition);
 		@self::exec($cmd, $output, $result);
 		if ($result !== 0)
 		{
 			return false;
 		}
 		return true;
-	}
-
-	private function _is_luks()
-	{
-		$this->_is_luks = self::is_luks($this->_partition);
 	}
 
 	/**
@@ -156,6 +151,20 @@ class Luks {
 
 	/**
 	 * @static
+	 * @return bool
+	 */
+	public static function uuid()
+	{
+		self::exec("uuid -v 4 -F STR", $output, $result);
+		if ($result !== 0)
+		{
+			return false;
+		}
+		return $output[0];
+	}
+
+	/**
+	 * @static
 	 *
 	 * @param $device
 	 *
@@ -165,13 +174,27 @@ class Luks {
 	{
 		if (self::is_device($device) === false)
 		{
-			throw new Exception('No device');
+			throw new Exception('No device given');
 		}
-		$cmd = sprintf("export LANG=C; sudo parted --script --align optimal -- %s mklabel gpt mkpart primary 2048s 100%", $device);
-		@self::exec($cmd, $output, $result);
-		if ($result !== 0)
+		if (self::is_partition($device) === true)
 		{
-			throw new Exception(print_r($output, true));
+			throw new Exception('No device given');
+		}
+		if (self::is_device_mapper($device) === true)
+		{
+			throw new Exception('No device given');
+		}
+		$commands   = array();
+		$commands[] = sprintf('export LANG=C; sudo parted --script --align optimal -- %1$s mklabel gpt mkpart primary 2048s 100%', $device);
+		$commands[] = sprintf('export LANG=C; sudo partprobe %1$s', $device);
+
+		foreach ($commands as $command)
+		{
+			@self::exec($command, $output, $result);
+			if ($result !== 0)
+			{
+				throw new Exception('Failed command: ' . $command . ' Result: ' . $result . ' Output: ' . json_encode($output));
+			}
 		}
 	}
 
@@ -227,6 +250,14 @@ class Luks {
 	/**
 	 * @return bool
 	 */
+	private function _is_luks()
+	{
+		return ($this->_is_luks = self::is_luks($this->_partition));
+	}
+
+	/**
+	 * @return bool
+	 */
 	private function _get_device_data()
 	{
 		if (!empty($this->_uuid))
@@ -235,7 +266,7 @@ class Luks {
 			@self::exec($cmd, $output, $result);
 			if ($result !== 0)
 			{
-				throw new Exception('No partition found');
+				return false;
 			}
 			$this->_partition = $output[0];
 		}
@@ -245,7 +276,7 @@ class Luks {
 		@self::exec($cmd, $output, $result);
 		if ($result !== 0)
 		{
-			throw new Exception('Partition not found');
+			return false;
 		}
 
 		// /dev/sdf1: UUID="13785615-a2ed-4ab1-a400-e9d75d382893" VERSION="256" TYPE="crypto_LUKS" USAGE="crypto"
@@ -377,14 +408,15 @@ class Luks {
 		$commands   = array();
 		$commands[] = 'sudo mkdir ' . dirname($this->_password_path);
 		$commands[] = 'sudo mount -t ramfs ramfs ' . dirname($this->_password_path);
-		$commands[] = 'echo -n "' . $password . '" > ' . $this->_password_path;
+		$commands[] = 'sudo touch ' . $this->_password_path;
+		$commands[] = 'sudo echo -n "' . $password . '" | sudo tee ' . $this->_password_path;
 
 		foreach ($commands as $command)
 		{
 			@self::exec($command, $output, $result);
 			if ($result !== 0)
 			{
-				throw new Exception(print_r($output, true));
+				throw new Exception('Failed command: ' . $command . ' Result: ' . $result . ' Output: ' . json_encode($output));
 			}
 		}
 	}
@@ -401,13 +433,15 @@ class Luks {
 			@self::exec($command, $output, $result);
 			if ($result !== 0)
 			{
-				throw new Exception(print_r($output, true));
+				throw new Exception('Failed command: ' . $command . ' Result: ' . $result . ' Output: ' . json_encode($output));
 			}
 		}
 	}
 
 	/**
 	 * Format luks Device
+	 *
+	 * @example $luks->format('twofish-cbc-essiv:sha256', 512, 'xfs', 'pass');
 	 *
 	 * @param $algorithm
 	 * @param $keysize
@@ -420,6 +454,9 @@ class Luks {
 		{
 			throw new Exception('Cannot format existing luks partition');
 		}
+
+		$this->_uuid = self::uuid();
+
 		$this->_save_password($password);
 
 		$commands   = array();
@@ -433,11 +470,12 @@ class Luks {
 			@self::exec($command, $output, $result);
 			if ($result !== 0)
 			{
-				throw new Exception(print_r($output, true));
+				throw new Exception('Failed command: ' . $command . ' Result: ' . $result . ' Output: ' . json_encode($output));
 			}
 		}
 
 		$this->_delete_password();
+		$this->_get_luks_data();
 	}
 
 	/**
@@ -467,7 +505,7 @@ class Luks {
 			@self::exec($command, $output, $result);
 			if ($result !== 0)
 			{
-				throw new Exception(print_r($output, true));
+				throw new Exception('Failed command: ' . $command . ' Result: ' . $result . ' Output: ' . json_encode($output));
 			}
 		}
 
@@ -499,7 +537,7 @@ class Luks {
 			@self::exec($command, $output, $result);
 			if ($result !== 0)
 			{
-				throw new Exception(print_r($output, true));
+				throw new Exception('Failed command: ' . $command . ' Result: ' . $result . ' Output: ' . json_encode($output));
 			}
 		}
 
