@@ -192,6 +192,7 @@ class Luks {
 	 *
 	 * @param $device
 	 *
+	 * @return string
 	 * @throws Exception
 	 */
 	public static function create_partition($device)
@@ -212,18 +213,21 @@ class Luks {
 		//$commands[] = sprintf("sudo omv-initfs -b -t xfs %s >/dev/null 2>&1 &", escapeshellarg($device));
 		if (self::is_md($device))
 		{
-			$commands[] = sprintf('export LANG=C; sudo wipefs -a %1$s', $device);
+			$commands[]     = sprintf('export LANG=C; sudo wipefs -a %1$s', $device);
+			$_new_partition = $device;
 		}
 		elseif (self::is_lvm($device))
 		{
-			$commands[] = sprintf('export LANG=C; sudo wipefs -a %1$s', $device);
+			$commands[]     = sprintf('export LANG=C; sudo wipefs -a %1$s', $device);
+			$_new_partition = $device;
 		}
 		else
 		{
-			$commands[] = sprintf('export LANG=C; sudo dd if=/dev/zero of=%1$s bs=512 count=4', $device);
-			$commands[] = sprintf('export LANG=C; sudo dd if=/dev/zero of=%1$s bs=512 count=2 seek=$(expr $(sudo blockdev --getsize64 %1$s) / 512 - 2)', $device);
-			$commands[] = sprintf('export LANG=C; sudo parted --script --align optimal -- %1$s mklabel gpt mkpart primary 2048s 100%', $device);
-			$commands[] = sprintf('export LANG=C; sudo partprobe %1$s', $device);
+			$commands[]     = sprintf('export LANG=C; sudo dd if=/dev/zero of=%1$s bs=512 count=4', $device);
+			$commands[]     = sprintf('export LANG=C; sudo dd if=/dev/zero of=%1$s bs=512 count=2 seek=$(expr $(sudo blockdev --getsize64 %1$s) / 512 - 2)', $device);
+			$commands[]     = sprintf('export LANG=C; sudo parted --script --align optimal -- %1$s mklabel gpt mkpart primary 2048s 100%', $device);
+			$commands[]     = sprintf('export LANG=C; sudo partprobe %1$s', $device);
+			$_new_partition = $device . '1';
 		}
 
 		foreach ($commands as $command)
@@ -234,6 +238,7 @@ class Luks {
 				throw new Exception('Failed command: ' . $command . ' Result: ' . $result . ' Output: ' . json_encode($output));
 			}
 		}
+		return $_new_partition;
 	}
 
 	/**
@@ -427,7 +432,8 @@ class Luks {
 					$this->_hash_spec = trim($keyValue[1]);
 					break;
 				case 'UUID':
-					$this->_uuid;
+					$this->_uuid   = trim($keyValue[1]);
+					$this->_mapper = '/dev/mapper/' . $this->_uuid;
 					break;
 			}
 		}
@@ -474,6 +480,7 @@ class Luks {
 				throw new Exception('Failed command: ' . $command . ' Result: ' . $result . ' Output: ' . json_encode($output));
 			}
 		}
+		$this->_password_path = null;
 	}
 
 	/**
@@ -488,10 +495,10 @@ class Luks {
 	 */
 	public function format($algorithm, $keysize, $type, $password)
 	{
-		if ($this->_is_luks($this->_partition))
-		{
-			throw new Exception('Wont format existing luks partition');
-		}
+		//		if ($this->_is_luks($this->_partition))
+		//		{
+		//			throw new Exception('Wont format existing luks partition');
+		//		}
 
 		$this->_uuid = self::uuid();
 
