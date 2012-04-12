@@ -225,7 +225,7 @@ class Luks {
 		{
 			$commands[]     = sprintf('export LANG=C; sudo dd if=/dev/zero of=%1$s bs=512 count=4', $device);
 			$commands[]     = sprintf('export LANG=C; sudo dd if=/dev/zero of=%1$s bs=512 count=2 seek=$(expr $(sudo blockdev --getsize64 %1$s) / 512 - 2)', $device);
-			$commands[]     = sprintf('export LANG=C; sudo parted --script --align optimal -- %1$s mklabel gpt mkpart primary 2048s 100%', $device);
+			$commands[]     = sprintf('export LANG=C; sudo parted --script --align optimal -- %1$s mklabel gpt mkpart primary 2048s 100%%', $device);
 			$commands[]     = sprintf('export LANG=C; sudo partprobe %1$s', $device);
 			$_new_partition = $device . '1';
 		}
